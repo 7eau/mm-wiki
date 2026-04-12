@@ -2,7 +2,6 @@ package client
 
 import (
 	"bytes"
-	"crypto/md5"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -62,12 +61,10 @@ func NewClient(baseURL string) (*MMWikiClient, error) {
 
 // Login authenticates with the MM-Wiki server
 func (c *MMWikiClient) Login(username, password string) error {
-	// MD5 encode password (matching MM-Wiki's encryption)
-	passwordHash := fmt.Sprintf("%x", md5.Sum([]byte(password)))
-
+	// Send plain text password - server will do MD5 encode
 	data := url.Values{}
 	data.Set("username", username)
-	data.Set("password", passwordHash)
+	data.Set("password", password)
 
 	resp, err := c.PostForm("/author/login", data)
 	if err != nil {

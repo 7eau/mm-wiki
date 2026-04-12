@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"fmt"
 	"strconv"
 	"time"
 )
@@ -22,8 +21,3 @@ func formatTimestamp(timestamp string) string {
 	return t.Format("2006-01-02 15:04:05")
 }
 
-// parseInt parses a string to int
-func parseInt(s string) int {
-	i, _ := strconv.Atoi(s)
-	return i
-}

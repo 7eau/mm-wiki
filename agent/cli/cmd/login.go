@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/phachon/mm-wiki/agent/cli/client"
 	"github.com/spf13/cobra"
