@@ -4,6 +4,7 @@ import unittest
 
 from agent.mmwiki.parsing import (
     classify_response,
+    parse_document_tree_ids,
     extract_markdown_from_page,
     is_login_redirect,
     parse_attachment_download_url,
@@ -38,7 +39,19 @@ class ParsingTests(unittest.TestCase):
             "/attachment/download?attachment_id=42",
         )
 
+    def test_parse_document_tree_ids(self) -> None:
+        html_text = """
+        <script>
+        var tree = [
+          {"document_id": 101, "name":"A"},
+          {"document_id":"102","name":"B"},
+        ];
+        </script>
+        <a href="/document/index?document_id=103">C</a>
+        <span>document_id:104</span>
+        """
+        self.assertEqual(parse_document_tree_ids(html_text), ["103", "101", "102", "104"])
+
 
 if __name__ == "__main__":
     unittest.main()
-

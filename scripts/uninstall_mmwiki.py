@@ -60,9 +60,14 @@ def main() -> int:
     kept = []
 
     if system == "windows":
-        targets = [bin_dir / "mmwiki.cmd", bin_dir / "mmwiki.ps1"]
+        targets = [
+            bin_dir / "mmwiki.cmd",
+            bin_dir / "mmwiki.ps1",
+            bin_dir / "mmwiki-preindex.cmd",
+            bin_dir / "mmwiki-preindex.ps1",
+        ]
     else:
-        targets = [bin_dir / "mmwiki"]
+        targets = [bin_dir / "mmwiki", bin_dir / "mmwiki-preindex"]
 
     for target in targets:
         if remove_file(target):
@@ -96,4 +101,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

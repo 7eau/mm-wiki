@@ -2,18 +2,20 @@ from __future__ import annotations
 
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote
 
 from .client import MMWikiClient
-from .errors import DriftError
+from .errors import ApiError, DriftError
 from .index import ContentIndex, IndexedDoc
 from .markdown import rewrite_markdown_assets, sha256_text
 from .parsing import (
     extract_markdown_from_page,
     extract_page_title,
+    parse_document_tree_ids,
     parse_profile_activity,
     parse_profile_follow_doc,
     parse_profile_info,
@@ -229,6 +231,68 @@ class MMWikiService:
     def index_install(self, *, from_path: str, backup_path: str | None = None) -> dict:
         return self.index.install_database(from_path=from_path, backup_path=backup_path)
 
+    def resolve_preindex_document_ids(
+        self,
+        *,
+        document_ids: list[str] | None = None,
+        space_ids: list[str] | None = None,
+        doc_range_start: int | None = None,
+        doc_range_end: int | None = None,
+    ) -> dict[str, int | list[str] | list[str]]:
+        explicit_ids = list(document_ids or [])
+        final_space_ids = list(space_ids or [])
+        range_ids = self._build_doc_range_ids(doc_range_start=doc_range_start, doc_range_end=doc_range_end)
+        space_doc_ids, resolve_errors = self._resolve_space_document_ids(final_space_ids)
+        requested_count = len(explicit_ids) + len(range_ids) + len(final_space_ids)
+        resolved = self._ordered_deduplicate([*explicit_ids, *range_ids, *space_doc_ids])
+        return {
+            "requested_count": requested_count,
+            "resolved_count": len(resolved),
+            "resolved_document_ids": resolved,
+            "errors": resolve_errors,
+        }
+
+    def preindex_documents(self, *, document_ids: list[str], workers: int = 4) -> dict:
+        resolved_ids = self._ordered_deduplicate(document_ids)
+        final_workers = max(1, workers)
+        skipped_count = 0
+        failed_count = 0
+        indexed_count = 0
+        errors: list[str] = []
+
+        def _fetch_single(document_id: str) -> IndexedDoc:
+            content, title = self._fetch_document_markdown(document_id)
+            return IndexedDoc(
+                document_id=document_id,
+                title=title or document_id,
+                content=content,
+                md_path=f"remote://{document_id}",
+            )
+
+        with ThreadPoolExecutor(max_workers=final_workers) as executor:
+            futures = {executor.submit(_fetch_single, document_id): document_id for document_id in resolved_ids}
+            for future in as_completed(futures):
+                document_id = futures[future]
+                try:
+                    doc = future.result()
+                    self.index.upsert(server=self.ctx.server, profile=self.ctx.profile, doc=doc)
+                    indexed_count += 1
+                except (ApiError, ValueError) as exc:
+                    skipped_count += 1
+                    errors.append(f"document_id={document_id}: skipped: {exc}")
+                except Exception as exc:
+                    failed_count += 1
+                    errors.append(f"document_id={document_id}: failed: {exc}")
+
+        return {
+            "requested_count": len(document_ids),
+            "resolved_count": len(resolved_ids),
+            "indexed_count": indexed_count,
+            "skipped_count": skipped_count,
+            "failed_count": failed_count,
+            "errors": errors,
+        }
+
     def doc_delete_local(self, *, md_path: str, document_id: str | None = None) -> dict:
         path = Path(md_path)
         removed_file = False
@@ -328,6 +392,59 @@ class MMWikiService:
             self.index.upsert(server=self.ctx.server, profile=self.ctx.profile, doc=doc)
             docs[document_id] = doc
         return docs
+
+    def _resolve_space_document_ids(self, space_ids: list[str]) -> tuple[list[str], list[str]]:
+        resolved: list[str] = []
+        errors: list[str] = []
+        for space_id in space_ids:
+            try:
+                default_document_id = self._resolve_space_default_document_id(space_id)
+                if not default_document_id:
+                    raise ValueError("space default document id not found")
+                resp = self.ctx.client.get(f"/document/index?document_id={quote(default_document_id)}")
+                document_ids = parse_document_tree_ids(resp.text)
+                if not document_ids:
+                    document_ids = [default_document_id]
+                resolved.extend(document_ids)
+            except Exception as exc:
+                errors.append(f"space_id={space_id}: {exc}")
+        return resolved, errors
+
+    def _resolve_space_default_document_id(self, space_id: str) -> str | None:
+        resp = self.ctx.client.get(f"/space/document?space_id={quote(space_id)}")
+        response_url = getattr(resp, "url", "")
+        from_url = parse_redirect_document_id(response_url) if response_url else None
+        if from_url:
+            return from_url
+        body_match = re.search(r"/document/index\?document_id=(\d+)", resp.text)
+        if body_match:
+            return body_match.group(1)
+        return None
+
+    def _build_doc_range_ids(
+        self,
+        *,
+        doc_range_start: int | None,
+        doc_range_end: int | None,
+    ) -> list[str]:
+        if doc_range_start is None and doc_range_end is None:
+            return []
+        if doc_range_start is None or doc_range_end is None:
+            raise ValueError("--doc-range-start and --doc-range-end must be provided together")
+        if doc_range_start > doc_range_end:
+            raise ValueError("--doc-range-start must be <= --doc-range-end")
+        return [str(value) for value in range(doc_range_start, doc_range_end + 1)]
+
+    def _ordered_deduplicate(self, values: list[str]) -> list[str]:
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for value in values:
+            item = str(value).strip()
+            if not item or item in seen:
+                continue
+            seen.add(item)
+            ordered.append(item)
+        return ordered
 
     def _summarize(self, title: str, content: str, max_sentences: int) -> str:
         cleaned = self._cleanup_text(content)

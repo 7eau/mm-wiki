@@ -21,7 +21,7 @@ def default_bin_dir() -> Path:
     return Path.home() / ".local" / "bin"
 
 
-def write_unix_launcher(path: Path, root: Path) -> None:
+def write_unix_launcher(path: Path, root: Path, module: str) -> None:
     launcher = f"""#!/usr/bin/env sh
 ROOT="{root}"
 if [ -n "$PYTHONPATH" ]; then
@@ -30,17 +30,17 @@ else
   export PYTHONPATH="$ROOT"
 fi
 if command -v python3 >/dev/null 2>&1; then
-  exec python3 -m agent.mmwiki.cli "$@"
+  exec python3 -m {module} "$@"
 fi
-exec python -m agent.mmwiki.cli "$@"
+exec python -m {module} "$@"
 """
     path.write_text(launcher, encoding="utf-8")
     mode = path.stat().st_mode
     path.chmod(mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
 
-def write_windows_launchers(bin_dir: Path, root: Path) -> list[Path]:
-    cmd_path = bin_dir / "mmwiki.cmd"
+def write_windows_launchers(bin_dir: Path, root: Path, name: str, module: str) -> list[Path]:
+    cmd_path = bin_dir / f"{name}.cmd"
     cmd_content = f"""@echo off
 set "ROOT={root}"
 if defined PYTHONPATH (
@@ -48,18 +48,18 @@ if defined PYTHONPATH (
 ) else (
   set "PYTHONPATH=%ROOT%"
 )
-py -m agent.mmwiki.cli %*
+py -m {module} %*
 """
     cmd_path.write_text(cmd_content, encoding="utf-8")
 
-    ps1_path = bin_dir / "mmwiki.ps1"
+    ps1_path = bin_dir / f"{name}.ps1"
     ps1_content = f"""$env:ROOT = "{root}"
 if ($env:PYTHONPATH) {{
   $env:PYTHONPATH = "$env:ROOT;$env:PYTHONPATH"
 }} else {{
   $env:PYTHONPATH = "$env:ROOT"
 }}
-py -m agent.mmwiki.cli @args
+py -m {module} @args
 """
     ps1_path.write_text(ps1_content, encoding="utf-8")
     return [cmd_path, ps1_path]
@@ -105,11 +105,15 @@ def main() -> int:
 
     created: list[Path] = []
     if platform.system().lower() == "windows":
-        created.extend(write_windows_launchers(bin_dir, root))
+        created.extend(write_windows_launchers(bin_dir, root, "mmwiki", "agent.mmwiki.cli"))
+        created.extend(write_windows_launchers(bin_dir, root, "mmwiki-preindex", "agent.mmwiki.preindex"))
     else:
         launcher = bin_dir / "mmwiki"
-        write_unix_launcher(launcher, root)
+        write_unix_launcher(launcher, root, "agent.mmwiki.cli")
         created.append(launcher)
+        preindex_launcher = bin_dir / "mmwiki-preindex"
+        write_unix_launcher(preindex_launcher, root, "agent.mmwiki.preindex")
+        created.append(preindex_launcher)
 
     print("Installed mmwiki launcher(s):")
     for item in created:
@@ -120,4 +124,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

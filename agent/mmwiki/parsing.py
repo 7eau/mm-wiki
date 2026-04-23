@@ -182,3 +182,21 @@ def parse_attachment_download_url(body_text: str, filename: str) -> str | None:
     if not match:
         return None
     return match.group(1)
+
+
+def parse_document_tree_ids(body_text: str) -> list[str]:
+    seen: set[str] = set()
+    ordered: list[str] = []
+    patterns = (
+        re.compile(r"/document/index\?document_id=(\d+)", flags=re.I),
+        re.compile(r'"document_id"\s*:\s*"?(\d+)"?', flags=re.I),
+        re.compile(r"\bdocument_id\s*:\s*(\d+)", flags=re.I),
+    )
+    for pattern in patterns:
+        for match in pattern.finditer(body_text):
+            document_id = match.group(1)
+            if document_id in seen:
+                continue
+            seen.add(document_id)
+            ordered.append(document_id)
+    return ordered

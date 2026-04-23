@@ -14,6 +14,10 @@ Use executable at repo root:
 ./mmwiki --profile dev search content keyword
 ./mmwiki --profile dev index export --out ./artifacts/content.db
 ./mmwiki --profile dev index install --from ./artifacts/content.db
+./mmwiki --profile dev index preindex-follows-if-missing
+./mmwiki-preindex --profile dev --document-ids 100,101 --workers 4
+./mmwiki-preindex --profile dev --space-ids 10,11
+./mmwiki-preindex --profile dev --doc-range-start 200 --doc-range-end 220
 ```
 
 ## Cross-platform install script
@@ -72,6 +76,23 @@ Use index portability commands to move local index metadata between machines:
 
 - `mmwiki index export --out <file>`
 - `mmwiki index install --from <file> [--backup <file>]`
+- `mmwiki index preindex-follows-if-missing` (skip when local `content.db` already exists)
+
+Use standalone preindexing when bootstrapping from explicit IDs, spaces, or ranges:
+
+- `mmwiki-preindex --document-ids 100,101`
+- `mmwiki-preindex --space-ids 10,11`
+- `mmwiki-preindex --doc-range-start 200 --doc-range-end 260`
+
+Structured preindex output fields:
+
+- `requested_count`
+- `resolved_count`
+- `indexed_count`
+- `skipped_count`
+- `failed_count`
+- `errors`
+- `skipped_reason` (when skipped)
 
 ## MCP server
 

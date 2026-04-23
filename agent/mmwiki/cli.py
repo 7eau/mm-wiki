@@ -7,6 +7,7 @@ import sys
 from .client import MMWikiClient
 from .core import Context, MMWikiService
 from .errors import MMWikiError
+from .index import ContentIndex
 from .state import resolve_server
 
 
@@ -122,6 +123,7 @@ def _base_parser() -> argparse.ArgumentParser:
     install = index_sub.add_parser("install")
     install.add_argument("--from", dest="from_path", required=True)
     install.add_argument("--backup")
+    index_sub.add_parser("preindex-follows-if-missing")
     return parser
 
 
@@ -129,6 +131,25 @@ def main(argv: list[str] | None = None) -> int:
     parser = _base_parser()
     args = parser.parse_args(argv)
     try:
+        if (
+            args.group == "index"
+            and args.cmd == "preindex-follows-if-missing"
+            and ContentIndex.db_path().exists()
+        ):
+            _print(
+                {
+                    "requested_count": 0,
+                    "resolved_count": 0,
+                    "indexed_count": 0,
+                    "skipped_count": 0,
+                    "failed_count": 0,
+                    "errors": [],
+                    "skipped_reason": "index_exists",
+                },
+                args.json,
+            )
+            return 0
+
         server = resolve_server(args.profile, args.server)
         client = MMWikiClient(server=server, profile=args.profile)
         ctx = Context(client=client, server=server, profile=args.profile, output_json=args.json)
@@ -198,8 +219,12 @@ def main(argv: list[str] | None = None) -> int:
         if args.group == "index":
             if args.cmd == "export":
                 result = service.index_export(out_path=args.out)
-            else:
+            elif args.cmd == "install":
                 result = service.index_install(from_path=args.from_path, backup_path=args.backup)
+            else:
+                follows = service.user_follows()
+                follow_ids = [item["document_id"] for item in follows if item.get("document_id")]
+                result = service.preindex_documents(document_ids=follow_ids, workers=4)
             _print(result, args.json)
             return 0
 

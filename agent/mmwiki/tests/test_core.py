@@ -67,6 +67,50 @@ class _AnalyzeClient:
         raise AssertionError("no asset upload expected")
 
 
+class _PreindexClient:
+    def __init__(self) -> None:
+        self.page_docs = {
+            "1": ("Doc-1", "content-1"),
+            "2": ("Doc-2", "content-2"),
+            "4": ("Doc-4", "content-4"),
+            "5": ("Doc-5", "content-5"),
+            "6": ("Doc-6", "content-6"),
+        }
+
+    def get(self, path: str):
+        if path.startswith("/space/document"):
+            if "space_id=9" in path:
+                return _Response("", parsed={}, json=None)
+            return _Response("", parsed={}, json=None)
+        if path.startswith("/document/index"):
+            if "document_id=6" in path:
+                return _Response(
+                    '<script>var tree=[{"document_id":6},{"document_id":"2"},'
+                    '{"document_id":6}, {"document_id":5}]</script>'
+                )
+            raise ValueError(path)
+        if path.startswith("/page/view"):
+            doc_id = path.split("document_id=", 1)[1]
+            if doc_id == "3":
+                from agent.mmwiki.errors import ApiError
+
+                raise ApiError("您没有权限访问该页面！")
+            if doc_id == "8":
+                raise RuntimeError("unexpected crash")
+            title, content = self.page_docs[doc_id]
+            return _Response(
+                f'<h3 class="view-page-title">{title}</h3>'
+                f'<div id="document_page_view"><textarea>{content}</textarea></div>'
+            )
+        raise ValueError(path)
+
+    def post(self, path: str, data):
+        raise AssertionError("no post expected")
+
+    def upload_file(self, path, *, field, file_path, extra_fields=None):
+        raise AssertionError("no asset upload expected")
+
+
 class CoreDriftTests(unittest.TestCase):
     def test_push_blocks_when_drifted(self) -> None:
         with TemporaryDirectory() as tmpdir:
@@ -144,6 +188,93 @@ class CoreDriftTests(unittest.TestCase):
             self.assertEqual(len(keywords), 1)
             self.assertLessEqual(len(keywords[0]["keywords"]), 5)
             self.assertTrue(any(token.startswith("backup") for token in keywords[0]["keywords"]))
+
+    def test_resolve_preindex_document_ids_from_union_sources(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            os.environ["XDG_CONFIG_HOME"] = str(Path(tmpdir) / "cfg")
+            os.environ["XDG_DATA_HOME"] = str(Path(tmpdir) / "data")
+            client = _PreindexClient()
+            service = MMWikiService(
+                Context(client=client, server="http://x", profile="p", output_json=True)
+            )
+
+            class _SpaceResp:
+                def __init__(self, url: str, text: str = "") -> None:
+                    self.url = url
+                    self.text = text
+                    self.parsed = None
+                    self.json = None
+
+            def get_with_space(path: str):
+                if path.startswith("/space/document?space_id=7"):
+                    return _SpaceResp("http://x/document/index?document_id=6")
+                if path.startswith("/space/document?space_id=9"):
+                    return _SpaceResp("http://x/space/document?space_id=9")
+                return original_get(path)
+
+            original_get = client.get
+            service.ctx.client.get = get_with_space  # type: ignore[method-assign]
+
+            resolved = service.resolve_preindex_document_ids(
+                document_ids=["1", "2", "2"],
+                space_ids=["7", "9"],
+                doc_range_start=4,
+                doc_range_end=5,
+            )
+            self.assertEqual(resolved["requested_count"], 7)
+            self.assertEqual(resolved["resolved_document_ids"], ["1", "2", "4", "5", "6"])
+            self.assertTrue(any("space_id=9" in item for item in resolved["errors"]))
+
+    def test_resolve_preindex_range_validation(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            os.environ["XDG_CONFIG_HOME"] = str(Path(tmpdir) / "cfg")
+            os.environ["XDG_DATA_HOME"] = str(Path(tmpdir) / "data")
+            client = _PreindexClient()
+            service = MMWikiService(
+                Context(client=client, server="http://x", profile="p", output_json=True)
+            )
+            with self.assertRaises(ValueError):
+                service.resolve_preindex_document_ids(doc_range_start=9, doc_range_end=8)
+
+    def test_preindex_documents_continue_on_error(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            os.environ["XDG_CONFIG_HOME"] = str(Path(tmpdir) / "cfg")
+            os.environ["XDG_DATA_HOME"] = str(Path(tmpdir) / "data")
+            client = _PreindexClient()
+            service = MMWikiService(
+                Context(client=client, server="http://x", profile="p", output_json=True)
+            )
+            result = service.preindex_documents(document_ids=["1", "2", "3", "1", "8"], workers=3)
+            self.assertEqual(result["requested_count"], 5)
+            self.assertEqual(result["resolved_count"], 4)
+            self.assertEqual(result["indexed_count"], 2)
+            self.assertEqual(result["skipped_count"], 1)
+            self.assertEqual(result["failed_count"], 1)
+            self.assertEqual(len(result["errors"]), 2)
+
+            docs = service.index.get_documents_by_ids(
+                server="http://x",
+                profile="p",
+                document_ids=["1", "2", "3", "8"],
+            )
+            self.assertEqual(set(docs.keys()), {"1", "2"})
+
+    def test_preindex_documents_summary_is_worker_deterministic(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            os.environ["XDG_CONFIG_HOME"] = str(Path(tmpdir) / "cfg")
+            os.environ["XDG_DATA_HOME"] = str(Path(tmpdir) / "data")
+            client = _PreindexClient()
+            service = MMWikiService(
+                Context(client=client, server="http://x", profile="p", output_json=True)
+            )
+            inputs = ["1", "2", "3", "8", "1"]
+            one_worker = service.preindex_documents(document_ids=inputs, workers=1)
+            many_workers = service.preindex_documents(document_ids=inputs, workers=5)
+            self.assertEqual(one_worker["requested_count"], many_workers["requested_count"])
+            self.assertEqual(one_worker["resolved_count"], many_workers["resolved_count"])
+            self.assertEqual(one_worker["indexed_count"], many_workers["indexed_count"])
+            self.assertEqual(one_worker["skipped_count"], many_workers["skipped_count"])
+            self.assertEqual(one_worker["failed_count"], many_workers["failed_count"])
 
 
 if __name__ == "__main__":

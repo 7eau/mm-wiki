@@ -16,6 +16,8 @@ Use this skill when you need to operate MM-Wiki from Codex via the local `mmwiki
 - Analyze keywords: `./mmwiki --profile dev analyze keywords --document-ids 123,456 --top-k 8`
 - Export index DB: `./mmwiki --profile dev index export --out ./artifacts/content.db`
 - Install index DB: `./mmwiki --profile dev index install --from ./artifacts/content.db --backup ./artifacts/content.backup.db`
+- Follow bootstrap preindex (if local index missing): `./mmwiki --profile dev index preindex-follows-if-missing`
+- Standalone preindex by docs/spaces/range: `./mmwiki-preindex --profile dev --document-ids 123,456 --space-ids 10 --doc-range-start 200 --doc-range-end 220 --workers 4`
 - User info: `./mmwiki --profile dev user info`
 - User follows: `./mmwiki --profile dev user follows`
 - User activity: `./mmwiki --profile dev user activity`
@@ -27,3 +29,4 @@ Use this skill when you need to operate MM-Wiki from Codex via the local `mmwiki
 - `doc delete-local` removes local markdown + snapshots but keeps index rows for fast retrieval.
 - `doc push` blocks remote drift unless `--force`.
 - `index install` atomically replaces local `content.db`, and backs up existing DB (auto path if not provided).
+- `preindex-follows-if-missing` exits early with `skipped_reason=index_exists` when local `content.db` already exists.
