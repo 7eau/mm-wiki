@@ -1,11 +1,23 @@
 from __future__ import annotations
 
 import os
+import sys
 from typing import Any
 
 from .client import MMWikiClient
 from .core import Context, MMWikiService
 from .state import resolve_server
+
+
+def _ensure_utf8_stdio() -> None:
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            try:
+                reconfigure(encoding="utf-8")
+            except Exception:
+                pass
 
 
 def _service(server: str | None, profile: str) -> MMWikiService:
@@ -15,6 +27,7 @@ def _service(server: str | None, profile: str) -> MMWikiService:
 
 
 def main() -> int:
+    _ensure_utf8_stdio()
     try:
         from mcp.server.fastmcp import FastMCP
     except Exception:

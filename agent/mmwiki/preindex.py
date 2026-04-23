@@ -10,6 +10,17 @@ from .errors import MMWikiError
 from .state import resolve_server
 
 
+def _ensure_utf8_stdio() -> None:
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            try:
+                reconfigure(encoding="utf-8")
+            except Exception:
+                pass
+
+
 def _print(value, as_json: bool) -> None:
     if as_json:
         print(json.dumps(value, ensure_ascii=False, indent=2))
@@ -42,6 +53,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    _ensure_utf8_stdio()
     parser = _build_parser()
     args = parser.parse_args(argv)
     try:
