@@ -1,0 +1,99 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import os
+import platform
+import shutil
+from pathlib import Path
+
+
+def default_bin_dir() -> Path:
+    system = platform.system().lower()
+    if system == "windows":
+        local = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+        return local / "Programs" / "mmwiki" / "bin"
+    return Path.home() / ".local" / "bin"
+
+
+def default_config_dir() -> Path:
+    base = os.environ.get("XDG_CONFIG_HOME")
+    if base:
+        return Path(base) / "mmwiki"
+    return Path.home() / ".config" / "mmwiki"
+
+
+def default_data_dir() -> Path:
+    base = os.environ.get("XDG_DATA_HOME")
+    if base:
+        return Path(base) / "mmwiki"
+    return Path.home() / ".local" / "share" / "mmwiki"
+
+
+def remove_file(path: Path) -> bool:
+    if not path.exists():
+        return False
+    if path.is_file() or path.is_symlink():
+        path.unlink()
+        return True
+    return False
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Uninstall mmwiki launcher for current user")
+    parser.add_argument(
+        "--bin-dir",
+        default=None,
+        help="Launcher directory to clean (default: OS-specific user bin)",
+    )
+    parser.add_argument(
+        "--purge-state",
+        action="store_true",
+        help="Also remove local mmwiki config/data (profiles, cookies, cache, index)",
+    )
+    args = parser.parse_args()
+
+    system = platform.system().lower()
+    bin_dir = Path(args.bin_dir).expanduser().resolve() if args.bin_dir else default_bin_dir()
+
+    removed = []
+    kept = []
+
+    if system == "windows":
+        targets = [bin_dir / "mmwiki.cmd", bin_dir / "mmwiki.ps1"]
+    else:
+        targets = [bin_dir / "mmwiki"]
+
+    for target in targets:
+        if remove_file(target):
+            removed.append(target)
+        else:
+            kept.append(target)
+
+    print("Uninstall results:")
+    if removed:
+        print("Removed launcher(s):")
+        for item in removed:
+            print(f"  {item}")
+    else:
+        print("No launcher files found to remove.")
+
+    if args.purge_state:
+        cfg = default_config_dir()
+        data = default_data_dir()
+        for folder in (cfg, data):
+            if folder.exists():
+                shutil.rmtree(folder)
+                print(f"Removed state dir: {folder}")
+            else:
+                print(f"State dir not found: {folder}")
+    else:
+        print("Kept local state (use --purge-state to remove it).")
+
+    print("\nIf you manually added PATH entries for mmwiki, you can now remove them.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
