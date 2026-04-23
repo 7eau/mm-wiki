@@ -10,7 +10,10 @@ Use executable at repo root:
 ./mmwiki --server http://127.0.0.1:8080 --profile dev auth login --username admin --password xxx
 ./mmwiki --profile dev doc pull --document-id 100 --md ./docs/100.md
 ./mmwiki --profile dev doc push --document-id 100 --md ./docs/100.md
+./mmwiki --profile dev doc delete-local --md ./docs/100.md --document-id 100
 ./mmwiki --profile dev search content keyword
+./mmwiki --profile dev index export --out ./artifacts/content.db
+./mmwiki --profile dev index install --from ./artifacts/content.db
 ```
 
 ## Cross-platform install script
@@ -62,6 +65,13 @@ Global flags:
 - Cookies: `${XDG_DATA_HOME:-~/.local/share}/mmwiki/cookies/*.cookies.txt`
 - Drift snapshots: `${XDG_DATA_HOME:-~/.local/share}/mmwiki/cache/snapshots.json`
 - Search index: `${XDG_DATA_HOME:-~/.local/share}/mmwiki/index/content.db`
+
+`doc delete-local` removes local markdown + matching drift snapshots, and keeps index rows for fast local `search content` / `analyze` retrieval.
+
+Use index portability commands to move local index metadata between machines:
+
+- `mmwiki index export --out <file>`
+- `mmwiki index install --from <file> [--backup <file>]`
 
 ## MCP server
 

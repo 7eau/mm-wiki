@@ -114,6 +114,14 @@ def _base_parser() -> argparse.ArgumentParser:
     keywords = analyze_sub.add_parser("keywords")
     keywords.add_argument("--document-ids", required=True, help="comma-separated document ids")
     keywords.add_argument("--top-k", type=int, default=8)
+
+    index = subparsers.add_parser("index")
+    index_sub = index.add_subparsers(dest="cmd", required=True)
+    export = index_sub.add_parser("export")
+    export.add_argument("--out", required=True)
+    install = index_sub.add_parser("install")
+    install.add_argument("--from", dest="from_path", required=True)
+    install.add_argument("--backup")
     return parser
 
 
@@ -185,6 +193,14 @@ def main(argv: list[str] | None = None) -> int:
                     _print(result, args.json)
                 else:
                     _print_analyze_blocks(result, field="keywords")
+            return 0
+
+        if args.group == "index":
+            if args.cmd == "export":
+                result = service.index_export(out_path=args.out)
+            else:
+                result = service.index_install(from_path=args.from_path, backup_path=args.backup)
+            _print(result, args.json)
             return 0
 
         if args.group == "user":

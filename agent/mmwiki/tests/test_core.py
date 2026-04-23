@@ -84,7 +84,7 @@ class CoreDriftTests(unittest.TestCase):
                 service.doc_push(document_id="1", md_path=str(md), force=False, comment="test")
             self.assertEqual(client.modify_calls, 0)
 
-    def test_doc_delete_local_cleans_snapshot_and_index(self) -> None:
+    def test_doc_delete_local_cleans_snapshot_and_retains_index(self) -> None:
         with TemporaryDirectory() as tmpdir:
             os.environ["XDG_CONFIG_HOME"] = str(Path(tmpdir) / "cfg")
             os.environ["XDG_DATA_HOME"] = str(Path(tmpdir) / "data")
@@ -104,16 +104,16 @@ class CoreDriftTests(unittest.TestCase):
 
             result = service.doc_delete_local(md_path=str(md), document_id="1")
             self.assertTrue(result["removed_file"])
+            self.assertTrue(result["retained_index"])
+            self.assertEqual(result["removed_index"], 0)
             self.assertFalse(md.exists())
             self.assertIsNone(get_snapshot("http://x", "p", "1", str(md)))
-            self.assertEqual(
-                service.index.get_documents_by_ids(
-                    server="http://x",
-                    profile="p",
-                    document_ids=["1"],
-                ),
-                {},
+            docs = service.index.get_documents_by_ids(
+                server="http://x",
+                profile="p",
+                document_ids=["1"],
             )
+            self.assertIn("1", docs)
 
     def test_analyze_summary_and_keywords_with_remote_fetch(self) -> None:
         with TemporaryDirectory() as tmpdir:

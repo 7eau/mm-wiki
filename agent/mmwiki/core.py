@@ -223,6 +223,12 @@ class MMWikiService:
     def search_content(self, *, keyword: str) -> list[dict[str, str]]:
         return self.index.search(server=self.ctx.server, profile=self.ctx.profile, keyword=keyword)
 
+    def index_export(self, *, out_path: str) -> dict:
+        return self.index.export_database(out_path=out_path)
+
+    def index_install(self, *, from_path: str, backup_path: str | None = None) -> dict:
+        return self.index.install_database(from_path=from_path, backup_path=backup_path)
+
     def doc_delete_local(self, *, md_path: str, document_id: str | None = None) -> dict:
         path = Path(md_path)
         removed_file = False
@@ -235,7 +241,6 @@ class MMWikiService:
         except FileNotFoundError:
             pass
         removed_snapshots = 0
-        removed_index = 0
         for candidate in path_candidates:
             removed_snapshots += remove_snapshots(
                 self.ctx.server,
@@ -243,18 +248,13 @@ class MMWikiService:
                 candidate,
                 document_id=document_id,
             )
-            removed_index += self.index.delete_documents(
-                server=self.ctx.server,
-                profile=self.ctx.profile,
-                md_path=candidate,
-                document_id=document_id,
-            )
         return {
             "md_path": md_path,
             "document_id": document_id,
             "removed_file": removed_file,
             "removed_snapshots": removed_snapshots,
-            "removed_index": removed_index,
+            "retained_index": True,
+            "removed_index": 0,
         }
 
     def analyze_summary(self, *, document_ids: list[str], max_sentences: int = 3) -> list[dict]:

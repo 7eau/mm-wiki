@@ -6,6 +6,21 @@ from agent.mmwiki.cli import _base_parser, _parse_document_ids
 
 
 class CLITests(unittest.TestCase):
+    def test_index_parser(self) -> None:
+        parser = _base_parser()
+        export = parser.parse_args(["index", "export", "--out", "./content.db"])
+        self.assertEqual(export.group, "index")
+        self.assertEqual(export.cmd, "export")
+        self.assertEqual(export.out, "./content.db")
+
+        install = parser.parse_args(
+            ["index", "install", "--from", "./other.db", "--backup", "./bak.db"]
+        )
+        self.assertEqual(install.group, "index")
+        self.assertEqual(install.cmd, "install")
+        self.assertEqual(install.from_path, "./other.db")
+        self.assertEqual(install.backup, "./bak.db")
+
     def test_doc_delete_local_parser(self) -> None:
         parser = _base_parser()
         args = parser.parse_args(["doc", "delete-local", "--md", "./a.md", "--document-id", "9"])

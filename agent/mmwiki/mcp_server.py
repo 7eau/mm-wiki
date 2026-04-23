@@ -55,6 +55,15 @@ def main() -> int:
         )
 
     @mcp.tool()
+    def doc_delete_local(
+        md_path: str,
+        document_id: str | None = None,
+        profile: str = "default",
+        server: str | None = None,
+    ) -> dict[str, Any]:
+        return _service(server, profile).doc_delete_local(md_path=md_path, document_id=document_id)
+
+    @mcp.tool()
     def doc_add(
         name: str,
         parent_id: str,
@@ -85,6 +94,23 @@ def main() -> int:
         return _service(server, profile).search_content(keyword=keyword)
 
     @mcp.tool()
+    def index_export(
+        out_path: str,
+        profile: str = "default",
+        server: str | None = None,
+    ) -> dict[str, Any]:
+        return _service(server, profile).index_export(out_path=out_path)
+
+    @mcp.tool()
+    def index_install(
+        from_path: str,
+        backup_path: str | None = None,
+        profile: str = "default",
+        server: str | None = None,
+    ) -> dict[str, Any]:
+        return _service(server, profile).index_install(from_path=from_path, backup_path=backup_path)
+
+    @mcp.tool()
     def user_info(profile: str = "default", server: str | None = None) -> dict[str, Any]:
         return _service(server, profile).user_info()
 
@@ -103,4 +129,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
