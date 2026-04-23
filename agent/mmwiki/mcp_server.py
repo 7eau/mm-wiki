@@ -122,6 +122,14 @@ def main() -> int:
     def user_activity(keyword: str = "", profile: str = "default", server: str | None = None) -> list[dict[str, str]]:
         return _service(server, profile).user_activity(keyword=keyword)
 
+    @mcp.tool()
+    def space_tree(space_id: str, profile: str = "default", server: str | None = None) -> dict[str, Any]:
+        return _service(server, profile).space_tree(space_id=space_id)
+
+    @mcp.tool()
+    def space_valid_list(profile: str = "default", server: str | None = None) -> dict[str, Any]:
+        return _service(server, profile).space_list_valid()
+
     transport = os.environ.get("MMWIKI_MCP_TRANSPORT", "stdio")
     mcp.run(transport=transport)
     return 0

@@ -52,6 +52,18 @@ class CLITests(unittest.TestCase):
         self.assertEqual(keywords.cmd, "keywords")
         self.assertEqual(keywords.top_k, 5)
 
+    def test_space_parsers(self) -> None:
+        parser = _base_parser()
+        tree = parser.parse_args(["space", "tree", "--space-id", "42"])
+        self.assertEqual(tree.group, "space")
+        self.assertEqual(tree.cmd, "tree")
+        self.assertEqual(tree.space_id, "42")
+
+        valid = parser.parse_args(["space", "valid-list", "--max-pages", "6"])
+        self.assertEqual(valid.group, "space")
+        self.assertEqual(valid.cmd, "valid-list")
+        self.assertEqual(valid.max_pages, 6)
+
     def test_parse_document_ids(self) -> None:
         self.assertEqual(_parse_document_ids("1,2, 3"), ["1", "2", "3"])
         with self.assertRaises(ValueError):

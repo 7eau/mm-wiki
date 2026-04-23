@@ -14,6 +14,8 @@ Use this skill when you need to operate MM-Wiki from Codex via the local `mmwiki
 - Content search: `./mmwiki --profile dev search content 关键字`
 - Analyze summary: `./mmwiki --profile dev analyze summary --document-ids 123,456 --max-sentences 3`
 - Analyze keywords: `./mmwiki --profile dev analyze keywords --document-ids 123,456 --top-k 8`
+- Space tree: `./mmwiki --profile dev space tree --space-id 10`
+- Valid spaces: `./mmwiki --profile dev space valid-list --max-pages 20`
 - Export index DB: `./mmwiki --profile dev index export --out ./artifacts/content.db`
 - Install index DB: `./mmwiki --profile dev index install --from ./artifacts/content.db --backup ./artifacts/content.backup.db`
 - Follow bootstrap preindex (if local index missing): `./mmwiki --profile dev index preindex-follows-if-missing`

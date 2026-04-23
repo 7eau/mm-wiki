@@ -200,3 +200,59 @@ def parse_document_tree_ids(body_text: str) -> list[str]:
             seen.add(document_id)
             ordered.append(document_id)
     return ordered
+
+
+def parse_document_tree_nodes(body_text: str) -> list[dict[str, str]]:
+    seen: set[str] = set()
+    ordered: list[dict[str, str]] = []
+
+    def _clean_title(raw: str) -> str:
+        return html.unescape(re.sub(r"<[^>]+>", "", raw or "")).strip()
+
+    def _append(document_id: str, title: str, *, prefer_non_empty: bool) -> None:
+        doc_id = (document_id or "").strip()
+        if not doc_id:
+            return
+        clean_title = _clean_title(title)
+        if doc_id in seen:
+            if prefer_non_empty and clean_title:
+                for item in ordered:
+                    if item["document_id"] == doc_id and not item["title"]:
+                        item["title"] = clean_title
+                        break
+            return
+        seen.add(doc_id)
+        ordered.append({"document_id": doc_id, "title": clean_title})
+
+    anchor_pattern = re.compile(
+        r'<a[^>]+href="/document/index\?document_id=(\d+)"[^>]*>(.*?)</a>',
+        flags=re.I | re.S,
+    )
+    for match in anchor_pattern.finditer(body_text):
+        _append(match.group(1), match.group(2), prefer_non_empty=True)
+
+    quoted_key_pattern = re.compile(
+        r'"document_id"\s*:\s*"?(\d+)"?(?:(?!\{|\}).){0,320}?"(?:title|name|text)"\s*:\s*"([^"]*)"',
+        flags=re.I | re.S,
+    )
+    for match in quoted_key_pattern.finditer(body_text):
+        _append(match.group(1), match.group(2), prefer_non_empty=False)
+
+    quoted_key_reverse_pattern = re.compile(
+        r'"(?:title|name|text)"\s*:\s*"([^"]*)"(?:.(?!\{|\})){0,320}?"document_id"\s*:\s*"?(\d+)"?',
+        flags=re.I | re.S,
+    )
+    for match in quoted_key_reverse_pattern.finditer(body_text):
+        _append(match.group(2), match.group(1), prefer_non_empty=False)
+
+    plain_key_pattern = re.compile(
+        r"\bdocument_id\s*:\s*(\d+)(?:(?!\{|\}).){0,320}?\b(?:title|name|text)\s*:\s*['\"]([^'\"]*)['\"]",
+        flags=re.I | re.S,
+    )
+    for match in plain_key_pattern.finditer(body_text):
+        _append(match.group(1), match.group(2), prefer_non_empty=False)
+
+    for document_id in parse_document_tree_ids(body_text):
+        _append(document_id, "", prefer_non_empty=False)
+
+    return ordered

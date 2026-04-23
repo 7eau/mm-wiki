@@ -12,6 +12,8 @@ Use executable at repo root:
 ./mmwiki --profile dev doc push --document-id 100 --md ./docs/100.md
 ./mmwiki --profile dev doc delete-local --md ./docs/100.md --document-id 100
 ./mmwiki --profile dev search content keyword
+./mmwiki --profile dev space tree --space-id 10
+./mmwiki --profile dev space valid-list
 ./mmwiki --profile dev index export --out ./artifacts/content.db
 ./mmwiki --profile dev index install --from ./artifacts/content.db
 ./mmwiki --profile dev index preindex-follows-if-missing
@@ -84,6 +86,26 @@ Use standalone preindexing when bootstrapping from explicit IDs, spaces, or rang
 - `mmwiki-preindex --space-ids 10,11`
 - `mmwiki-preindex --doc-range-start 200 --doc-range-end 260`
 
+Space discovery commands:
+
+- `mmwiki space tree --space-id <id>`
+- `mmwiki space valid-list [--max-pages <n>]`
+
+Structured space tree output fields:
+
+- `space_id`
+- `root_document_id`
+- `documents` (ordered `{document_id, title}`)
+- `document_count`
+- `errors`
+
+Structured valid space list output fields:
+
+- `spaces` (each item: `space_id`, `space_name`, `root_document_id`)
+- `valid_count`
+- `invalid_count`
+- `errors`
+
 Structured preindex output fields:
 
 - `requested_count`
@@ -104,3 +126,8 @@ python -m agent.mmwiki.mcp_server
 Environment:
 
 - `MMWIKI_MCP_TRANSPORT` (default `stdio`)
+
+MCP tools:
+
+- `space_tree(space_id, profile="default", server=None)`
+- `space_valid_list(profile="default", server=None)`

@@ -4,10 +4,11 @@ import unittest
 
 from agent.mmwiki.parsing import (
     classify_response,
-    parse_document_tree_ids,
     extract_markdown_from_page,
     is_login_redirect,
     parse_attachment_download_url,
+    parse_document_tree_ids,
+    parse_document_tree_nodes,
     parse_html_error,
 )
 
@@ -51,6 +52,28 @@ class ParsingTests(unittest.TestCase):
         <span>document_id:104</span>
         """
         self.assertEqual(parse_document_tree_ids(html_text), ["103", "101", "102", "104"])
+
+    def test_parse_document_tree_nodes_prefers_anchor_title_and_fallback(self) -> None:
+        html_text = """
+        <a href="/document/index?document_id=300"><i class="fa"></i> 研发首页 </a>
+        <script>
+        var tree = [
+          {"document_id":300, "name":"Root from payload"},
+          {"document_id":"301","title":"Roadmap"},
+          {document_id:302,name:"Spec"}
+        ];
+        </script>
+        <span>document_id:303</span>
+        """
+        self.assertEqual(
+            parse_document_tree_nodes(html_text),
+            [
+                {"document_id": "300", "title": "研发首页"},
+                {"document_id": "301", "title": "Roadmap"},
+                {"document_id": "302", "title": "Spec"},
+                {"document_id": "303", "title": ""},
+            ],
+        )
 
 
 if __name__ == "__main__":

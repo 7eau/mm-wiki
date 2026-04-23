@@ -12,10 +12,11 @@ from agent.mmwiki.state import get_snapshot
 
 
 class _Response:
-    def __init__(self, text: str, parsed=None, json=None):
+    def __init__(self, text: str, parsed=None, json=None, url: str = ""):
         self.text = text
         self.parsed = parsed
         self.json = json
+        self.url = url
 
 
 class _Client:
@@ -102,6 +103,61 @@ class _PreindexClient:
                 f'<h3 class="view-page-title">{title}</h3>'
                 f'<div id="document_page_view"><textarea>{content}</textarea></div>'
             )
+        raise ValueError(path)
+
+    def post(self, path: str, data):
+        raise AssertionError("no post expected")
+
+    def upload_file(self, path, *, field, file_path, extra_fields=None):
+        raise AssertionError("no asset upload expected")
+
+
+class _SpaceClient:
+    def __init__(self) -> None:
+        self.space_pages = {
+            1: [
+                {"space_id": "10", "name": "研发空间"},
+                {"space_id": "11", "name": "产品空间"},
+            ],
+            2: [{"space_id": "12", "name": "失效空间"}],
+            3: [],
+        }
+        self.space_roots = {
+            "10": "1000",
+            "11": "1100",
+            "12": None,
+            "20": "2000",
+        }
+
+    def get(self, path: str):
+        if path.startswith("/space/list?page="):
+            page = int(path.split("=", 1)[1])
+            spaces = self.space_pages.get(page, [])
+            rows = "".join(
+                f'<a href="/space/document?space_id={item["space_id"]}"><strong>{item["name"]}</strong></a>'
+                for item in spaces
+            )
+            return _Response(rows)
+        if path.startswith("/space/document?space_id="):
+            space_id = path.split("=", 1)[1]
+            root = self.space_roots.get(space_id)
+            if root:
+                return _Response(
+                    "",
+                    parsed={},
+                    json=None,
+                    url=f"http://x/document/index?document_id={root}",
+                )
+            return _Response("", parsed={}, json=None, url=f"http://x/space/document?space_id={space_id}")
+        if path.startswith("/document/index?document_id=1000"):
+            return _Response(
+                """
+                <a href="/document/index?document_id=1000">研发首页</a>
+                <script>var tree=[{"document_id":"1001","title":"平台规范"},{"document_id":"1002"}]</script>
+                """
+            )
+        if path.startswith("/document/index?document_id=2000"):
+            return _Response('<a href="/document/index?document_id=2999">孤立节点</a>')
         raise ValueError(path)
 
     def post(self, path: str, data):
@@ -275,6 +331,60 @@ class CoreDriftTests(unittest.TestCase):
             self.assertEqual(one_worker["indexed_count"], many_workers["indexed_count"])
             self.assertEqual(one_worker["skipped_count"], many_workers["skipped_count"])
             self.assertEqual(one_worker["failed_count"], many_workers["failed_count"])
+
+    def test_space_tree_returns_ordered_documents_and_counts(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            os.environ["XDG_CONFIG_HOME"] = str(Path(tmpdir) / "cfg")
+            os.environ["XDG_DATA_HOME"] = str(Path(tmpdir) / "data")
+            client = _SpaceClient()
+            service = MMWikiService(
+                Context(client=client, server="http://x", profile="p", output_json=True)
+            )
+            result = service.space_tree(space_id="10")
+            self.assertEqual(result["space_id"], "10")
+            self.assertEqual(result["root_document_id"], "1000")
+            self.assertEqual(
+                result["documents"],
+                [
+                    {"document_id": "1000", "title": "研发首页"},
+                    {"document_id": "1001", "title": "平台规范"},
+                    {"document_id": "1002", "title": ""},
+                ],
+            )
+            self.assertEqual(result["document_count"], 3)
+            self.assertEqual(result["errors"], [])
+
+    def test_space_tree_includes_root_when_missing_in_payload(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            os.environ["XDG_CONFIG_HOME"] = str(Path(tmpdir) / "cfg")
+            os.environ["XDG_DATA_HOME"] = str(Path(tmpdir) / "data")
+            client = _SpaceClient()
+            service = MMWikiService(
+                Context(client=client, server="http://x", profile="p", output_json=True)
+            )
+            result = service.space_tree(space_id="20")
+            self.assertEqual(result["documents"][0]["document_id"], "2000")
+            self.assertTrue(any("root document missing" in item for item in result["errors"]))
+
+    def test_space_valid_list_collects_valid_and_invalid(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            os.environ["XDG_CONFIG_HOME"] = str(Path(tmpdir) / "cfg")
+            os.environ["XDG_DATA_HOME"] = str(Path(tmpdir) / "data")
+            client = _SpaceClient()
+            service = MMWikiService(
+                Context(client=client, server="http://x", profile="p", output_json=True)
+            )
+            result = service.space_list_valid(max_pages=5)
+            self.assertEqual(
+                result["spaces"],
+                [
+                    {"space_id": "10", "space_name": "研发空间", "root_document_id": "1000"},
+                    {"space_id": "11", "space_name": "产品空间", "root_document_id": "1100"},
+                ],
+            )
+            self.assertEqual(result["valid_count"], 2)
+            self.assertEqual(result["invalid_count"], 1)
+            self.assertEqual(result["errors"][0]["space_id"], "12")
 
 
 if __name__ == "__main__":

@@ -107,6 +107,13 @@ def _base_parser() -> argparse.ArgumentParser:
     activity = user_sub.add_parser("activity")
     activity.add_argument("--keyword", default="")
 
+    space = subparsers.add_parser("space")
+    space_sub = space.add_subparsers(dest="cmd", required=True)
+    tree = space_sub.add_parser("tree")
+    tree.add_argument("--space-id", required=True)
+    valid_list = space_sub.add_parser("valid-list")
+    valid_list.add_argument("--max-pages", type=int, default=20)
+
     analyze = subparsers.add_parser("analyze")
     analyze_sub = analyze.add_subparsers(dest="cmd", required=True)
     summary = analyze_sub.add_parser("summary")
@@ -235,6 +242,14 @@ def main(argv: list[str] | None = None) -> int:
                 result = service.user_follows()
             else:
                 result = service.user_activity(keyword=args.keyword)
+            _print(result, args.json)
+            return 0
+
+        if args.group == "space":
+            if args.cmd == "tree":
+                result = service.space_tree(space_id=args.space_id)
+            else:
+                result = service.space_list_valid(max_pages=args.max_pages)
             _print(result, args.json)
             return 0
     except MMWikiError as exc:

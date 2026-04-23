@@ -15,6 +15,7 @@ from .markdown import rewrite_markdown_assets, sha256_text
 from .parsing import (
     extract_markdown_from_page,
     extract_page_title,
+    parse_document_tree_nodes,
     parse_document_tree_ids,
     parse_profile_activity,
     parse_profile_follow_doc,
@@ -224,6 +225,76 @@ class MMWikiService:
 
     def search_content(self, *, keyword: str) -> list[dict[str, str]]:
         return self.index.search(server=self.ctx.server, profile=self.ctx.profile, keyword=keyword)
+
+    def space_tree(self, *, space_id: str) -> dict:
+        errors: list[str] = []
+        root_document_id = self._resolve_space_default_document_id(space_id)
+        if not root_document_id:
+            return {
+                "space_id": space_id,
+                "root_document_id": "",
+                "documents": [],
+                "document_count": 0,
+                "errors": [f"space_id={space_id}: root document not found"],
+            }
+
+        resp = self.ctx.client.get(f"/document/index?document_id={quote(root_document_id)}")
+        documents = parse_document_tree_nodes(resp.text)
+        if not documents:
+            errors.append(f"space_id={space_id}: no tree nodes parsed; fallback to root document")
+            documents = [{"document_id": root_document_id, "title": ""}]
+
+        if not any(item["document_id"] == root_document_id for item in documents):
+            errors.append(f"space_id={space_id}: root document missing from tree payload")
+            documents = [{"document_id": root_document_id, "title": ""}, *documents]
+
+        return {
+            "space_id": space_id,
+            "root_document_id": root_document_id,
+            "documents": documents,
+            "document_count": len(documents),
+            "errors": errors,
+        }
+
+    def space_list_valid(self, *, max_pages: int = 20) -> dict:
+        spaces: list[dict[str, str]] = []
+        invalid_count = 0
+        errors: list[dict[str, str]] = []
+        final_max_pages = max(1, max_pages)
+        for page in range(1, final_max_pages + 1):
+            resp = self.ctx.client.get(f"/space/list?page={page}")
+            page_spaces = parse_space_list(resp.text)
+            if not page_spaces:
+                break
+            for item in page_spaces:
+                space_id = item["space_id"]
+                space_name = item["name"]
+                try:
+                    root_document_id = self._resolve_space_default_document_id(space_id)
+                    if not root_document_id:
+                        raise ValueError("root document not found")
+                    spaces.append(
+                        {
+                            "space_id": space_id,
+                            "space_name": space_name,
+                            "root_document_id": root_document_id,
+                        }
+                    )
+                except Exception as exc:
+                    invalid_count += 1
+                    errors.append(
+                        {
+                            "space_id": space_id,
+                            "space_name": space_name,
+                            "error": str(exc),
+                        }
+                    )
+        return {
+            "spaces": spaces,
+            "valid_count": len(spaces),
+            "invalid_count": invalid_count,
+            "errors": errors,
+        }
 
     def index_export(self, *, out_path: str) -> dict:
         return self.index.export_database(out_path=out_path)
