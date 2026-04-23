@@ -75,6 +75,45 @@ class ParsingTests(unittest.TestCase):
             ],
         )
 
+    def test_parse_document_tree_nodes_from_documents_data_payload(self) -> None:
+        html_text = """
+        <script>
+        var documentData = {
+            'spaceId': parseInt(5),
+            'id': parseInt(500),
+            'pId': parseInt(0),
+            'name': "空间首页",
+            'open': false,
+            'isParent': true
+        };
+        var documentData = {
+            'spaceId': parseInt(5),
+            'id': parseInt(501),
+            'pId': parseInt(500),
+            'name': "后端规范",
+            'open': false,
+            'isParent': false
+        };
+        var documentData = {
+            'spaceId': parseInt(5),
+            'id': parseInt(502),
+            'pId': parseInt(500),
+            'name': "前端规范",
+            'open': false,
+            'isParent': false
+        };
+        </script>
+        """
+        self.assertEqual(parse_document_tree_ids(html_text), ["500", "501", "502"])
+        self.assertEqual(
+            parse_document_tree_nodes(html_text),
+            [
+                {"document_id": "500", "title": "空间首页"},
+                {"document_id": "501", "title": "后端规范"},
+                {"document_id": "502", "title": "前端规范"},
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
