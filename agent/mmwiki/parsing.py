@@ -24,6 +24,7 @@ _RE_SEARCH_ROW = re.compile(
     flags=re.I,
 )
 _RE_ACTIVITY_ROW = re.compile(r"<tr>(.*?)</tr>", flags=re.S | re.I)
+_RE_JS_INT_VALUE = r'(?:parseInt\(\s*["\']?(\d+)["\']?\s*\)|["\']?(\d+)["\']?)'
 
 
 def classify_response(content_type: str, body_text: str) -> str:
@@ -192,11 +193,13 @@ def parse_document_tree_ids(body_text: str) -> list[str]:
         re.compile(r"/document/index\?document_id=(\d+)", flags=re.I),
         re.compile(r'"document_id"\s*:\s*"?(\d+)"?', flags=re.I),
         re.compile(r"\bdocument_id\s*:\s*(\d+)", flags=re.I),
-        re.compile(r"""['"]id['"]\s*:\s*(?:parseInt\()?\s*(\d+)\s*\)?""", flags=re.I),
+        re.compile(rf"""['"]id['"]\s*:\s*{_RE_JS_INT_VALUE}""", flags=re.I),
     )
     for pattern in patterns:
         for match in pattern.finditer(body_text):
-            document_id = match.group(1)
+            document_id = next((group for group in match.groups() if group), "")
+            if not document_id:
+                continue
             if document_id in seen:
                 continue
             seen.add(document_id)
@@ -232,7 +235,7 @@ def parse_document_tree_nodes(body_text: str) -> list[dict[str, str]]:
     def _extract_document_data_blocks(text: str) -> list[tuple[str, str]]:
         blocks: list[tuple[str, str]] = []
         block_pattern = re.compile(r"var\s+documentData\s*=\s*\{(.*?)\};", flags=re.I | re.S)
-        id_pattern = re.compile(r"""['"]id['"]\s*:\s*(?:parseInt\()?\s*(\d+)\s*\)?""", flags=re.I)
+        id_pattern = re.compile(rf"""['"]id['"]\s*:\s*{_RE_JS_INT_VALUE}""", flags=re.I)
         name_pattern = re.compile(
             r"""['"]name['"]\s*:\s*("(?:(?:\\.|[^"])*)"|'(?:(?:\\.|[^'])*)')""",
             flags=re.I | re.S,
@@ -243,6 +246,9 @@ def parse_document_tree_nodes(body_text: str) -> list[dict[str, str]]:
             id_match = id_pattern.search(segment)
             if not id_match:
                 continue
+            document_id = next((group for group in id_match.groups() if group), "")
+            if not document_id:
+                continue
             title = ""
             name_match = name_pattern.search(segment)
             if name_match:
@@ -251,7 +257,7 @@ def parse_document_tree_nodes(body_text: str) -> list[dict[str, str]]:
                 bare_name_match = bare_name_pattern.search(segment)
                 if bare_name_match:
                     title = bare_name_match.group(1).strip().strip(",")
-            blocks.append((id_match.group(1), title))
+            blocks.append((document_id, title))
         return blocks
 
     def _append(document_id: str, title: str, *, prefer_non_empty: bool) -> None:
@@ -301,11 +307,16 @@ def parse_document_tree_nodes(body_text: str) -> list[dict[str, str]]:
         _append(document_id, title, prefer_non_empty=False)
 
     ztree_pattern = re.compile(
-        r"""['"]id['"]\s*:\s*(?:parseInt\()?\s*(\d+)\s*\)?(?:(?!\{|\}).){0,320}?['"]name['"]\s*:\s*("(?:(?:\\.|[^"])*)"|'(?:(?:\\.|[^'])*)')""",
+        rf"""['"]id['"]\s*:\s*{_RE_JS_INT_VALUE}(?:(?!\{{|\}}).){{0,320}}?['"]name['"]\s*:\s*("(?:(?:\\.|[^"])*)"|'(?:(?:\\.|[^'])*)')""",
         flags=re.I | re.S,
     )
     for match in ztree_pattern.finditer(body_text):
-        _append(match.group(1), _decode_js_string_literal(match.group(2)), prefer_non_empty=False)
+        groups = list(match.groups())
+        document_id = next((group for group in groups[:2] if group), "")
+        if not document_id:
+            continue
+        title_group = groups[2] if len(groups) > 2 else ""
+        _append(document_id, _decode_js_string_literal(title_group), prefer_non_empty=False)
 
     for document_id in parse_document_tree_ids(body_text):
         _append(document_id, "", prefer_non_empty=False)

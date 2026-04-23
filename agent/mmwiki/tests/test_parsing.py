@@ -80,7 +80,7 @@ class ParsingTests(unittest.TestCase):
         <script>
         var documentData = {
             'spaceId': parseInt(5),
-            'id': parseInt(500),
+            'id': parseInt("500"),
             'pId': parseInt(0),
             'name': "空间首页",
             'open': false,
@@ -88,7 +88,7 @@ class ParsingTests(unittest.TestCase):
         };
         var documentData = {
             'spaceId': parseInt(5),
-            'id': parseInt(501),
+            'id': parseInt("501"),
             'pId': parseInt(500),
             'name': "后端规范",
             'open': false,
@@ -96,7 +96,7 @@ class ParsingTests(unittest.TestCase):
         };
         var documentData = {
             'spaceId': parseInt(5),
-            'id': parseInt(502),
+            'id': parseInt("502"),
             'pId': parseInt(500),
             'name': "前端规范",
             'open': false,
