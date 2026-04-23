@@ -229,6 +229,31 @@ def parse_document_tree_nodes(body_text: str) -> list[dict[str, str]]:
         inner = inner.replace("\\\\", "\\")
         return inner
 
+    def _extract_document_data_blocks(text: str) -> list[tuple[str, str]]:
+        blocks: list[tuple[str, str]] = []
+        block_pattern = re.compile(r"var\s+documentData\s*=\s*\{(.*?)\};", flags=re.I | re.S)
+        id_pattern = re.compile(r"""['"]id['"]\s*:\s*(?:parseInt\()?\s*(\d+)\s*\)?""", flags=re.I)
+        name_pattern = re.compile(
+            r"""['"]name['"]\s*:\s*("(?:(?:\\.|[^"])*)"|'(?:(?:\\.|[^'])*)')""",
+            flags=re.I | re.S,
+        )
+        bare_name_pattern = re.compile(r"""['"]name['"]\s*:\s*([^,\n]+)""", flags=re.I | re.S)
+        for block in block_pattern.finditer(text):
+            segment = block.group(1)
+            id_match = id_pattern.search(segment)
+            if not id_match:
+                continue
+            title = ""
+            name_match = name_pattern.search(segment)
+            if name_match:
+                title = _decode_js_string_literal(name_match.group(1))
+            else:
+                bare_name_match = bare_name_pattern.search(segment)
+                if bare_name_match:
+                    title = bare_name_match.group(1).strip().strip(",")
+            blocks.append((id_match.group(1), title))
+        return blocks
+
     def _append(document_id: str, title: str, *, prefer_non_empty: bool) -> None:
         doc_id = (document_id or "").strip()
         if not doc_id:
@@ -271,6 +296,9 @@ def parse_document_tree_nodes(body_text: str) -> list[dict[str, str]]:
     )
     for match in plain_key_pattern.finditer(body_text):
         _append(match.group(1), match.group(2), prefer_non_empty=False)
+
+    for document_id, title in _extract_document_data_blocks(body_text):
+        _append(document_id, title, prefer_non_empty=False)
 
     ztree_pattern = re.compile(
         r"""['"]id['"]\s*:\s*(?:parseInt\()?\s*(\d+)\s*\)?(?:(?!\{|\}).){0,320}?['"]name['"]\s*:\s*("(?:(?:\\.|[^"])*)"|'(?:(?:\\.|[^'])*)')""",
