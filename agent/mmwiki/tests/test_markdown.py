@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from agent.mmwiki.markdown import rewrite_markdown_assets
+from agent.mmwiki.markdown import rewrite_markdown_assets, rewrite_markdown_links_for_pull
 
 
 class _FakeResponse:
@@ -45,7 +45,36 @@ class MarkdownRewriteTests(unittest.TestCase):
             self.assertIn("[att](/attachment/download?attachment_id=9)", output)
             self.assertIn("[ext](https://example.com)", output)
 
+    def test_rewrite_links_for_pull_relative_targets(self) -> None:
+        markdown = "\n".join(
+            [
+                "![root](/uploads/a.png)",
+                "[dot](./docs/guide.md)",
+                "[parent](../docs/../api/ref.md)",
+                "![bare](assets/logo.png)",
+            ]
+        )
+        output = rewrite_markdown_links_for_pull("http://wiki.example.com/", markdown)
+        self.assertIn("![root](http://wiki.example.com/uploads/a.png)", output)
+        self.assertIn("[dot](http://wiki.example.com/docs/guide.md)", output)
+        self.assertIn("[parent](http://wiki.example.com/api/ref.md)", output)
+        self.assertIn("![bare](http://wiki.example.com/assets/logo.png)", output)
+
+    def test_rewrite_links_for_pull_keeps_absolute_and_special_targets(self) -> None:
+        markdown = "\n".join(
+            [
+                "[http](http://example.com/a)",
+                "[https](https://example.com/b)",
+                "[mail](mailto:dev@example.com)",
+                "[tel](tel:+10086)",
+                "[anchor](#section)",
+                "[empty]()",
+                "![img](https://example.com/img.png)",
+            ]
+        )
+        output = rewrite_markdown_links_for_pull("http://wiki.example.com", markdown)
+        self.assertEqual(output, markdown)
+
 
 if __name__ == "__main__":
     unittest.main()
-

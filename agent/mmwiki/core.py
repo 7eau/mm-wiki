@@ -11,7 +11,7 @@ from urllib.parse import quote
 from .client import MMWikiClient
 from .errors import ApiError, DriftError
 from .index import ContentIndex, IndexedDoc
-from .markdown import rewrite_markdown_assets, sha256_text
+from .markdown import rewrite_markdown_assets, rewrite_markdown_links_for_pull, sha256_text
 from .parsing import (
     extract_markdown_from_page,
     extract_page_title,
@@ -164,15 +164,21 @@ class MMWikiService:
 
     def doc_pull(self, *, document_id: str, md_path: str) -> dict:
         content, title = self._fetch_document_markdown(document_id)
+        rewritten_content = rewrite_markdown_links_for_pull(self.ctx.server, content)
         path = Path(md_path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding="utf-8")
-        digest = sha256_text(content)
+        path.write_text(rewritten_content, encoding="utf-8")
+        digest = sha256_text(rewritten_content)
         set_snapshot(self.ctx.server, self.ctx.profile, document_id, str(path), digest, title)
         self.index.upsert(
             server=self.ctx.server,
             profile=self.ctx.profile,
-            doc=IndexedDoc(document_id=document_id, title=title or document_id, content=content, md_path=str(path)),
+            doc=IndexedDoc(
+                document_id=document_id,
+                title=title or document_id,
+                content=rewritten_content,
+                md_path=str(path),
+            ),
         )
         return {"document_id": document_id, "md_path": str(path), "sha256": digest, "title": title}
 

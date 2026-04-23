@@ -8,6 +8,7 @@ from tempfile import TemporaryDirectory
 from agent.mmwiki.core import Context, MMWikiService
 from agent.mmwiki.errors import DriftError
 from agent.mmwiki.index import IndexedDoc
+from agent.mmwiki.markdown import sha256_text
 from agent.mmwiki.state import get_snapshot
 
 
@@ -167,7 +168,50 @@ class _SpaceClient:
         raise AssertionError("no asset upload expected")
 
 
+class _PullClient:
+    def get(self, path: str):
+        if path.startswith("/page/view"):
+            return _Response(
+                '<h3 class="view-page-title">Pulled Doc</h3>'
+                '<div id="document_page_view"><textarea>'
+                '![img](./img/a.png)\n[doc](../docs/b.md)\n[ext](https://example.com/c)'
+                "</textarea></div>"
+            )
+        raise ValueError(path)
+
+    def post(self, path: str, data):
+        raise AssertionError("no post expected")
+
+    def upload_file(self, path, *, field, file_path, extra_fields=None):
+        raise AssertionError("no upload expected")
+
+
 class CoreDriftTests(unittest.TestCase):
+    def test_doc_pull_rewrites_markdown_and_snapshot_hash(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            os.environ["XDG_CONFIG_HOME"] = str(Path(tmpdir) / "cfg")
+            os.environ["XDG_DATA_HOME"] = str(Path(tmpdir) / "data")
+            md = Path(tmpdir) / "pulled.md"
+            client = _PullClient()
+            ctx = Context(client=client, server="http://x/", profile="p", output_json=True)
+            service = MMWikiService(ctx)
+
+            result = service.doc_pull(document_id="7", md_path=str(md))
+
+            expected_content = (
+                "![img](http://x/img/a.png)\n[doc](http://x/docs/b.md)\n[ext](https://example.com/c)"
+            )
+            self.assertEqual(md.read_text(encoding="utf-8"), expected_content)
+            expected_digest = sha256_text(expected_content)
+            self.assertEqual(result["document_id"], "7")
+            self.assertEqual(result["md_path"], str(md))
+            self.assertEqual(result["title"], "Pulled Doc")
+            self.assertEqual(result["sha256"], expected_digest)
+
+            snapshot = get_snapshot("http://x/", "p", "7", str(md))
+            self.assertIsNotNone(snapshot)
+            self.assertEqual(snapshot["sha256"], expected_digest)
+
     def test_push_blocks_when_drifted(self) -> None:
         with TemporaryDirectory() as tmpdir:
             os.environ["XDG_CONFIG_HOME"] = str(Path(tmpdir) / "cfg")

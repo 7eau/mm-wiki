@@ -1,16 +1,17 @@
 from __future__ import annotations
 
 import os
+import posixpath
 import re
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit, urlunsplit
 
 from .client import MMWikiClient
 from .errors import ApiError
 from .parsing import parse_attachment_download_url
 
 
-_RE_MD_LINK = re.compile(r"(!?\[[^\]]*\])\(([^)]+)\)")
+_RE_MD_LINK = re.compile(r"(!?\[[^\]]*\])\(([^)]*)\)")
 _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp"}
 
 
@@ -54,3 +55,44 @@ def rewrite_markdown_assets(client: MMWikiClient, document_id: str, markdown: st
         return f"{label}({url})"
 
     return _RE_MD_LINK.sub(replace, markdown)
+
+
+def rewrite_markdown_links_for_pull(server: str, markdown: str) -> str:
+    origin = _server_origin(server)
+
+    def replace(match: re.Match[str]) -> str:
+        label, raw_target = match.group(1), match.group(2)
+        target = raw_target.strip()
+        if _should_skip_pull_rewrite(target):
+            return match.group(0)
+        absolute = _build_pull_absolute_target(origin, target)
+        return f"{label}({absolute})"
+
+    return _RE_MD_LINK.sub(replace, markdown)
+
+
+def _server_origin(server: str) -> str:
+    parsed = urlsplit(server)
+    if parsed.scheme and parsed.netloc:
+        return urlunsplit((parsed.scheme, parsed.netloc, "", "", "")).rstrip("/")
+    return server.rstrip("/")
+
+
+def _should_skip_pull_rewrite(target: str) -> bool:
+    if not target:
+        return True
+    lowered = target.lower()
+    return lowered.startswith(("http://", "https://", "mailto:", "tel:", "#"))
+
+
+def _build_pull_absolute_target(origin: str, target: str) -> str:
+    parsed = urlsplit(target)
+    raw_path = parsed.path
+    if raw_path.startswith("/"):
+        normalized_path = posixpath.normpath(raw_path)
+    else:
+        normalized_path = posixpath.normpath(f"/{raw_path}")
+    if not normalized_path.startswith("/"):
+        normalized_path = f"/{normalized_path}"
+    normalized_target = urlunsplit(("", "", normalized_path, parsed.query, parsed.fragment))
+    return f"{origin}{normalized_target}"
