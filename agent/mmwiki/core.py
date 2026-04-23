@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import re
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote
@@ -19,7 +21,50 @@ from .parsing import (
     parse_search_title,
     parse_space_list,
 )
-from .state import get_snapshot, set_snapshot
+from .state import get_snapshot, remove_snapshots, set_snapshot
+
+_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9\u4e00-\u9fff]+", flags=re.UNICODE)
+_SENTENCE_SPLIT_PATTERN = re.compile(r"(?<=[。！？!?\.])\s+|\n+")
+_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "be",
+    "by",
+    "for",
+    "from",
+    "in",
+    "is",
+    "it",
+    "of",
+    "on",
+    "or",
+    "that",
+    "the",
+    "this",
+    "to",
+    "was",
+    "we",
+    "with",
+    "你",
+    "你们",
+    "和",
+    "在",
+    "是",
+    "了",
+    "及",
+    "与",
+    "或",
+    "并",
+    "一个",
+    "我们",
+    "他们",
+    "她们",
+    "它们",
+}
 
 
 @dataclass
@@ -178,6 +223,78 @@ class MMWikiService:
     def search_content(self, *, keyword: str) -> list[dict[str, str]]:
         return self.index.search(server=self.ctx.server, profile=self.ctx.profile, keyword=keyword)
 
+    def doc_delete_local(self, *, md_path: str, document_id: str | None = None) -> dict:
+        path = Path(md_path)
+        removed_file = False
+        if path.exists():
+            path.unlink()
+            removed_file = True
+        path_candidates = {md_path}
+        try:
+            path_candidates.add(str(path.resolve()))
+        except FileNotFoundError:
+            pass
+        removed_snapshots = 0
+        removed_index = 0
+        for candidate in path_candidates:
+            removed_snapshots += remove_snapshots(
+                self.ctx.server,
+                self.ctx.profile,
+                candidate,
+                document_id=document_id,
+            )
+            removed_index += self.index.delete_documents(
+                server=self.ctx.server,
+                profile=self.ctx.profile,
+                md_path=candidate,
+                document_id=document_id,
+            )
+        return {
+            "md_path": md_path,
+            "document_id": document_id,
+            "removed_file": removed_file,
+            "removed_snapshots": removed_snapshots,
+            "removed_index": removed_index,
+        }
+
+    def analyze_summary(self, *, document_ids: list[str], max_sentences: int = 3) -> list[dict]:
+        docs = self._get_or_fetch_documents(document_ids)
+        results = []
+        final_max_sentences = max(1, max_sentences)
+        for document_id in document_ids:
+            doc = docs.get(document_id)
+            if not doc:
+                continue
+            summary = self._summarize(doc.title, doc.content, final_max_sentences)
+            results.append(
+                {
+                    "document_id": document_id,
+                    "title": doc.title,
+                    "summary": summary,
+                    "max_sentences": final_max_sentences,
+                }
+            )
+        return results
+
+    def analyze_keywords(self, *, document_ids: list[str], top_k: int = 8) -> list[dict]:
+        docs = self._get_or_fetch_documents(document_ids)
+        results = []
+        final_top_k = max(1, top_k)
+        for document_id in document_ids:
+            doc = docs.get(document_id)
+            if not doc:
+                continue
+            keywords = self._extract_keywords(doc.title, doc.content, final_top_k)
+            results.append(
+                {
+                    "document_id": document_id,
+                    "title": doc.title,
+                    "keywords": keywords,
+                    "top_k": final_top_k,
+                }
+            )
+        return results
+
     def user_info(self) -> dict:
         resp = self.ctx.client.get("/system/profile/info")
         return parse_profile_info(resp.text)
@@ -193,3 +310,79 @@ class MMWikiService:
         resp = self.ctx.client.get(path)
         return parse_profile_activity(resp.text)
 
+    def _get_or_fetch_documents(self, document_ids: list[str]) -> dict[str, IndexedDoc]:
+        docs = self.index.get_documents_by_ids(
+            server=self.ctx.server,
+            profile=self.ctx.profile,
+            document_ids=document_ids,
+        )
+        missing_ids = [document_id for document_id in document_ids if document_id not in docs]
+        for document_id in missing_ids:
+            content, title = self._fetch_document_markdown(document_id)
+            doc = IndexedDoc(
+                document_id=document_id,
+                title=title or document_id,
+                content=content,
+                md_path=f"remote://{document_id}",
+            )
+            self.index.upsert(server=self.ctx.server, profile=self.ctx.profile, doc=doc)
+            docs[document_id] = doc
+        return docs
+
+    def _summarize(self, title: str, content: str, max_sentences: int) -> str:
+        cleaned = self._cleanup_text(content)
+        if not cleaned:
+            return ""
+        sentences = [value.strip() for value in _SENTENCE_SPLIT_PATTERN.split(cleaned) if value.strip()]
+        if not sentences:
+            return cleaned[:240]
+        frequency = Counter(self._meaningful_tokens(cleaned))
+        title_tokens = set(self._meaningful_tokens(title))
+        scored: list[tuple[float, int, str]] = []
+        for idx, sentence in enumerate(sentences):
+            sentence_tokens = self._meaningful_tokens(sentence)
+            if not sentence_tokens:
+                continue
+            overlap_score = sum(1 for token in sentence_tokens if token in title_tokens)
+            tf_score = sum(frequency[token] for token in sentence_tokens)
+            score = overlap_score * 2 + tf_score
+            scored.append((float(score), idx, sentence))
+        if not scored:
+            return " ".join(sentences[:max_sentences])
+        scored.sort(key=lambda item: (-item[0], item[1]))
+        picked = scored[:max_sentences]
+        picked.sort(key=lambda item: item[1])
+        return " ".join(item[2] for item in picked)
+
+    def _extract_keywords(self, title: str, content: str, top_k: int) -> list[str]:
+        tokens = self._meaningful_tokens(f"{title}\n{content}")
+        if not tokens:
+            return []
+        counts = Counter(tokens)
+        first_seen: dict[str, int] = {}
+        for idx, token in enumerate(tokens):
+            first_seen.setdefault(token, idx)
+        ranked = sorted(counts.keys(), key=lambda token: (-counts[token], first_seen[token], token))
+        return ranked[:top_k]
+
+    def _meaningful_tokens(self, text: str) -> list[str]:
+        tokens = []
+        for token in _TOKEN_PATTERN.findall(text.lower()):
+            if token in _STOPWORDS:
+                continue
+            if token.isdigit():
+                continue
+            if len(token) == 1 and not self._is_cjk(token):
+                continue
+            tokens.append(token)
+        return tokens
+
+    def _cleanup_text(self, text: str) -> str:
+        cleaned = text.replace("\r\n", "\n")
+        cleaned = re.sub(r"`{1,3}.*?`{1,3}", " ", cleaned)
+        cleaned = re.sub(r"[*_>#-]+", " ", cleaned)
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        return cleaned
+
+    def _is_cjk(self, token: str) -> bool:
+        return bool(re.fullmatch(r"[\u4e00-\u9fff]+", token))

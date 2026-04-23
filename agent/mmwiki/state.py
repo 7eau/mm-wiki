@@ -7,6 +7,8 @@ from typing import Any
 
 from .paths import config_dir, data_dir, ensure_dirs
 
+DEFAULT_SERVER = "http://10.18.5.111:8080"
+
 
 @dataclass(frozen=True)
 class Profile:
@@ -56,7 +58,7 @@ def resolve_server(profile_name: str, server: str | None) -> str:
     profile = load_profile(profile_name)
     if profile:
         return profile.server
-    raise ValueError(f"profile '{profile_name}' has no configured server; pass --server first")
+    return DEFAULT_SERVER
 
 
 def snapshot_key(server: str, profile: str, document_id: str, md_path: str) -> str:
@@ -83,3 +85,26 @@ def set_snapshot(
     }
     _save_json(_snapshots_file(), snapshots)
 
+
+def remove_snapshots(
+    server: str,
+    profile: str,
+    md_path: str,
+    document_id: str | None = None,
+) -> int:
+    snapshots = _load_json(_snapshots_file(), {})
+    keys_to_delete: list[str] = []
+    for key in snapshots.keys():
+        snap_server, snap_profile, snap_doc, snap_md_path = key.split("|", 3)
+        if snap_server != server or snap_profile != profile:
+            continue
+        if snap_md_path != md_path:
+            continue
+        if document_id and snap_doc != document_id:
+            continue
+        keys_to_delete.append(key)
+    for key in keys_to_delete:
+        snapshots.pop(key, None)
+    if keys_to_delete:
+        _save_json(_snapshots_file(), snapshots)
+    return len(keys_to_delete)

@@ -27,6 +27,28 @@ def _print(value, as_json: bool) -> None:
     print(value)
 
 
+def _parse_document_ids(value: str) -> list[str]:
+    ids = [item.strip() for item in value.split(",") if item.strip()]
+    if not ids:
+        raise ValueError("--document-ids requires at least one id")
+    return ids
+
+
+def _print_analyze_blocks(items: list[dict], *, field: str) -> None:
+    if not items:
+        print("(empty)")
+        return
+    for item in items:
+        print(f"document_id: {item.get('document_id', '')}")
+        print(f"title: {item.get('title', '')}")
+        value = item.get(field)
+        if isinstance(value, list):
+            print(f"{field}: {', '.join(str(v) for v in value)}")
+        else:
+            print(f"{field}: {value}")
+        print("")
+
+
 def _base_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="mmwiki")
     parser.add_argument("--server", default=None, help="MM-Wiki server base URL")
@@ -66,6 +88,9 @@ def _base_parser() -> argparse.ArgumentParser:
     push.add_argument("--md", required=True)
     push.add_argument("--force", action="store_true")
     push.add_argument("--comment", default="updated via mmwiki")
+    delete_local = doc_sub.add_parser("delete-local")
+    delete_local.add_argument("--md", required=True)
+    delete_local.add_argument("--document-id")
 
     search = subparsers.add_parser("search")
     search_sub = search.add_subparsers(dest="cmd", required=True)
@@ -80,6 +105,15 @@ def _base_parser() -> argparse.ArgumentParser:
     user_sub.add_parser("follows")
     activity = user_sub.add_parser("activity")
     activity.add_argument("--keyword", default="")
+
+    analyze = subparsers.add_parser("analyze")
+    analyze_sub = analyze.add_subparsers(dest="cmd", required=True)
+    summary = analyze_sub.add_parser("summary")
+    summary.add_argument("--document-ids", required=True, help="comma-separated document ids")
+    summary.add_argument("--max-sentences", type=int, default=3)
+    keywords = analyze_sub.add_parser("keywords")
+    keywords.add_argument("--document-ids", required=True, help="comma-separated document ids")
+    keywords.add_argument("--top-k", type=int, default=8)
     return parser
 
 
@@ -117,6 +151,8 @@ def main(argv: list[str] | None = None) -> int:
                 result = service.doc_pull(document_id=args.document_id, md_path=args.md)
             elif args.cmd == "edit":
                 result = service.doc_edit(md_path=args.md)
+            elif args.cmd == "delete-local":
+                result = service.doc_delete_local(md_path=args.md, document_id=args.document_id)
             else:
                 result = service.doc_push(
                     document_id=args.document_id,
@@ -133,6 +169,22 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 result = service.search_content(keyword=args.keyword)
             _print(result, args.json)
+            return 0
+
+        if args.group == "analyze":
+            document_ids = _parse_document_ids(args.document_ids)
+            if args.cmd == "summary":
+                result = service.analyze_summary(document_ids=document_ids, max_sentences=args.max_sentences)
+                if args.json:
+                    _print(result, args.json)
+                else:
+                    _print_analyze_blocks(result, field="summary")
+            else:
+                result = service.analyze_keywords(document_ids=document_ids, top_k=args.top_k)
+                if args.json:
+                    _print(result, args.json)
+                else:
+                    _print_analyze_blocks(result, field="keywords")
             return 0
 
         if args.group == "user":
@@ -155,4 +207,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
