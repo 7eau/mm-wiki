@@ -13,12 +13,10 @@ def repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
-def default_bin_dir() -> Path:
-    system = platform.system().lower()
-    if system == "windows":
-        local = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
-        return local / "Programs" / "mmwiki" / "bin"
-    return Path.home() / ".local" / "bin"
+def resolve_bin_dir(bin_dir: str | None) -> Path:
+    if bin_dir:
+        return Path(bin_dir).expanduser().resolve()
+    return Path.cwd().resolve()
 
 
 def write_unix_launcher(path: Path, root: Path, module: str) -> None:
@@ -65,8 +63,15 @@ py -m {module} @args
     return [cmd_path, ps1_path]
 
 
-def print_path_hint(bin_dir: Path) -> None:
+def print_path_hint(bin_dir: Path, *, is_default_local: bool) -> None:
     system = platform.system().lower()
+    if is_default_local:
+        print("\nInstalled in current directory; run directly:")
+        if system == "windows":
+            print("  .\\mmwiki.cmd --help")
+        else:
+            print("  ./mmwiki --help")
+        return
     if system == "windows":
         print("\nAdd this directory to your PATH (User PATH):")
         print(f"  {bin_dir}")
@@ -91,7 +96,7 @@ def main() -> int:
     parser.add_argument(
         "--bin-dir",
         default=None,
-        help="Target directory for launcher script (default: OS-specific user bin)",
+        help="Target directory for launcher script (default: current directory)",
     )
     args = parser.parse_args()
 
@@ -100,7 +105,7 @@ def main() -> int:
         return 1
 
     root = repo_root()
-    bin_dir = Path(args.bin_dir).expanduser().resolve() if args.bin_dir else default_bin_dir()
+    bin_dir = resolve_bin_dir(args.bin_dir)
     bin_dir.mkdir(parents=True, exist_ok=True)
 
     created: list[Path] = []
@@ -118,7 +123,7 @@ def main() -> int:
     print("Installed mmwiki launcher(s):")
     for item in created:
         print(f"  {item}")
-    print_path_hint(bin_dir)
+    print_path_hint(bin_dir, is_default_local=args.bin_dir is None)
     return 0
 
 

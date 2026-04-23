@@ -30,22 +30,25 @@ From repo root, run:
 python scripts/install_mmwiki.py
 ```
 
+This installs launchers into the current terminal path (`$PWD`) by default.
+For example, from repo root it creates:
+
+- `./mmwiki`
+- `./mmwiki-preindex`
+
 Optional custom target:
 
 ```bash
 python scripts/install_mmwiki.py --bin-dir /custom/bin
 ```
 
-Defaults:
-
-- Windows: `%LOCALAPPDATA%\Programs\mmwiki\bin`
-- macOS/Linux: `~/.local/bin`
-
-After install, add that directory to your `PATH`, reopen terminal, then run:
+When installed in the current directory, run directly:
 
 ```bash
-mmwiki --help
+./mmwiki --help
 ```
+
+For global PATH usage, install to a custom bin dir (for example `~/.local/bin`) with `--bin-dir`.
 
 Uninstall launcher:
 

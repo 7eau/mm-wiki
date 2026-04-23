@@ -8,12 +8,10 @@ import shutil
 from pathlib import Path
 
 
-def default_bin_dir() -> Path:
-    system = platform.system().lower()
-    if system == "windows":
-        local = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
-        return local / "Programs" / "mmwiki" / "bin"
-    return Path.home() / ".local" / "bin"
+def resolve_bin_dir(bin_dir: str | None) -> Path:
+    if bin_dir:
+        return Path(bin_dir).expanduser().resolve()
+    return Path.cwd().resolve()
 
 
 def default_config_dir() -> Path:
@@ -44,7 +42,7 @@ def main() -> int:
     parser.add_argument(
         "--bin-dir",
         default=None,
-        help="Launcher directory to clean (default: OS-specific user bin)",
+        help="Launcher directory to clean (default: current directory)",
     )
     parser.add_argument(
         "--purge-state",
@@ -54,7 +52,7 @@ def main() -> int:
     args = parser.parse_args()
 
     system = platform.system().lower()
-    bin_dir = Path(args.bin_dir).expanduser().resolve() if args.bin_dir else default_bin_dir()
+    bin_dir = resolve_bin_dir(args.bin_dir)
 
     removed = []
     kept = []
